@@ -12,6 +12,10 @@ web evolution of the pipeline described in:
 > semantic network analysis of biomedical literature.* Heliyon. 2024.
 > [Read the paper ↗](https://pmc.ncbi.nlm.nih.gov/articles/PMC11399583/)
 
+<p align="center">
+  <a href="LICENSE"><img alt="License: AGPL v3" src="https://img.shields.io/badge/License-AGPLv3-blue.svg"></a>
+</p>
+
 The original pipeline ran across four sequential Jupyter notebooks and required a local
 Python/spaCy setup. This app moves the heavy computation server-side, runs jobs in the
 background, and gives collaborators a no-setup interface. Multi-user with login; each run
@@ -81,3 +85,9 @@ notebook pipeline (`PubGetParse.py` and downstream analysis), rebuilt in `pipeli
 - Set `JWT_SECRET` in production — the app refuses to start without it.
 - Each run's outputs (CSVs, plots) live under `data/` and `export/` — back those up like any
   other file storage.
+
+## License
+
+Copyright (C) 2026 Giovanni Spitale. Licensed under AGPL-3.0 — fork it, host it, sell access
+to it, but keep it closed-source and you're in violation. No SaaS forks that don't share
+back. See [LICENSE](LICENSE).
