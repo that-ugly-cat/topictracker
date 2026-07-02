@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}TopicTracker — My runs{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
+  <div>
+    <h1>Runs</h1>
+    <p class="muted">Your PubMed analysis runs</p>
+  </div>
+  <a href="/new" class="btn btn-primary">+ New run</a>
+</div>
+
+{% if not runs %}
+<div class="card" style="text-align:center;padding:3rem">
+  <p style="color:#4a5568;margin-bottom:1rem">No runs yet.</p>
+  <a href="/new" class="btn btn-primary">Start your first search</a>
+</div>
+{% else %}
+<div class="card" style="padding:0;overflow:hidden">
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Query</th>
+        <th>Years</th>
+        <th>Papers</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td style="color:#e2e8f0;font-weight:500">{{ run.title }}</td>
+        <td style="font-family:monospace;font-size:0.8rem;color:#718096;max-width:260px">
+          <div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4">{{ run.query }}</div>
+          {% if run.query|length > 120 %}
+          <button onclick="showQuery(this)" data-query="{{ run.query | e }}" style="background:none;border:none;color:#4a90d9;font-size:0.75rem;cursor:pointer;padding:0;margin-top:0.2rem">show full query…</button>
+          {% endif %}
+        </td>
+        <td>{{ run.year_from }}–{{ run.year_to }}</td>
+        <td>{{ run.paper_count or "—" }}</td>
+        <td>
+          {% if run.status == "pending" or run.status == "downloading" %}
+            <span class="badge badge-download">Downloading</span>
+          {% elif run.status == "done_download" %}
+            <span class="badge badge-pending">Ready to analyse</span>
+          {% elif run.status == "analysing" %}
+            <span class="badge badge-analysing">Analysing</span>
+          {% elif run.status == "done" %}
+            <span class="badge badge-done">Done</span>
+          {% elif run.status == "error" %}
+            <span class="badge badge-error">Error</span>
+          {% else %}
+            <span class="badge badge-pending">{{ run.status }}</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ run.created_at.strftime("%Y-%m-%d %H:%M") if run.created_at else "—" }}</td>
+        <td style="display:flex;gap:0.4rem">
+          <a href="/run/{{ run.id }}" class="btn btn-secondary btn-sm">Open</a>
+          <form method="post" action="/run/{{ run.id }}/delete" onsubmit="return confirm('Delete run «{{ run.title }}»?')">
+            <button type="submit" class="btn btn-sm" style="background:#742a2a;color:#fff;border:none">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Query modal -->
+<div id="query-modal" onclick="if(event.target===this)this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#1a2030;border:1px solid #2d3148;border-radius:8px;padding:1.5rem;max-width:680px;width:90%;max-height:80vh;overflow-y:auto;position:relative">
+    <button onclick="document.getElementById('query-modal').style.display='none'" style="position:absolute;top:0.7rem;right:0.8rem;background:none;border:none;color:#718096;font-size:1.2rem;cursor:pointer">✕</button>
+    <p style="color:#a0aec0;font-size:0.75rem;margin-bottom:0.5rem">Full query</p>
+    <pre id="query-modal-text" style="font-family:monospace;font-size:0.82rem;color:#e2e8f0;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+  </div>
+</div>
+<script>
+function showQuery(btn) {
+  document.getElementById('query-modal-text').textContent = btn.dataset.query;
+  const m = document.getElementById('query-modal');
+  m.style.display = 'flex';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('query-modal').style.display = 'none'; });
+</script>
+{% endblock %}

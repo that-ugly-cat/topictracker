@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}TopicTracker — Admin{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom:1.5rem">Admin — Users</h1>
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-error">{{ request.query_params.get('error') }}</div>
+{% endif %}
+
+<!-- Create user -->
+<div class="card" style="max-width:560px;margin-bottom:2rem">
+  <h2>Add user</h2>
+  <form method="post" action="/admin/users">
+    <div class="grid-2">
+      <div>
+        <label>Email</label>
+        <input type="email" name="email" required>
+      </div>
+      <div>
+        <label>Name</label>
+        <input type="text" name="name">
+      </div>
+    </div>
+    <label>Password</label>
+    <input type="password" name="password" required>
+    <label style="display:flex;align-items:center;gap:0.5rem;margin-top:1rem;cursor:pointer">
+      <input type="checkbox" name="is_admin" value="true"> Admin
+    </label>
+    <button type="submit" class="btn btn-primary" style="margin-top:1rem">Create user</button>
+  </form>
+</div>
+
+<!-- User list -->
+<div class="card" style="padding:0;overflow:hidden">
+  <table>
+    <thead>
+      <tr>
+        <th>Email</th>
+        <th>Name</th>
+        <th>Admin</th>
+        <th>Active</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td style="color:#e2e8f0">{{ u.email }}</td>
+        <td>{{ u.name or "—" }}</td>
+        <td>{% if u.is_admin %}<span class="badge badge-download">admin</span>{% else %}—{% endif %}</td>
+        <td>{% if u.is_active %}<span class="badge badge-done">active</span>{% else %}<span class="badge badge-error">inactive</span>{% endif %}</td>
+        <td class="muted">{{ u.created_at.strftime("%Y-%m-%d") if u.created_at else "—" }}</td>
+        <td style="display:flex;gap:0.4rem;flex-wrap:wrap">
+          {% if u.id != user.id %}
+          <form method="post" action="/admin/users/{{ u.id }}/toggle" style="display:inline">
+            <button class="btn btn-secondary btn-sm" type="submit">
+              {% if u.is_active %}Deactivate{% else %}Activate{% endif %}
+            </button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline"
+                onsubmit="return confirm('Delete user {{ u.email }}?')">
+            <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+          </form>
+          {% else %}
+          <span class="muted">(you)</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

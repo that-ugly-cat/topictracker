@@ -1,0 +1,11 @@
+services:
+  topictracker:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./data:/app/data
+      - ./export:/app/export
+    environment:
+      - JWT_SECRET=${JWT_SECRET}

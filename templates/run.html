@@ -1,0 +1,951 @@
+{% extends "base.html" %}
+{% block title %}TopicTracker — {{ run.title }}{% endblock %}
+
+{% block head %}
+<!-- Bokeh CDN (loaded lazily when step 3 is first used) -->
+<script>window._bokehLoaded = false; window._BOKEH_VERSION = "{{ bokeh_version }}";</script>
+<style>
+  .phase-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .phase-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #0a3c8a;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    margin-right: 0.6rem;
+    flex-shrink: 0;
+  }
+
+  .phase-num.done   { background: #0f6a3a; }
+  .phase-num.locked { background: #2d3148; color: #4a5568; }
+
+  .entity-select-area {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  .entity-select-area input { flex: 1; min-width: 200px; }
+
+  .selected-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    min-height: 28px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: #1e2a3d;
+    border: 1px solid #2d3d5a;
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.78rem;
+    color: #a0c4f8;
+  }
+
+  .chip button {
+    background: none;
+    border: none;
+    color: #4a6fa5;
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+
+  .chip button:hover { color: #fc8181; }
+
+  .plot-area { margin-top: 1rem; }
+
+  .plot-controls {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .autocomplete-list {
+    position: absolute;
+    z-index: 100;
+    background: #1a1d27;
+    border: 1px solid #2d3148;
+    border-radius: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    width: 100%;
+  }
+
+  .autocomplete-list div {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.82rem;
+    color: #a0aec0;
+    cursor: pointer;
+  }
+
+  .autocomplete-list div:hover { background: #252a3e; color: #e2e8f0; }
+
+  .ac-wrap { position: relative; flex: 1; min-width: 200px; }
+
+  #bokeh-container { min-height: 60px; }
+
+  #cluster-modal.open { display: flex !important; }
+
+  .plot-img { cursor: zoom-in; transition: opacity 0.15s; }
+  .plot-img:hover { opacity: 0.85; }
+
+  #lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  #lightbox.open { display: flex; }
+  #lightbox img {
+    max-width: 92vw;
+    max-height: 80vh;
+    border-radius: 8px;
+    background: #fff;
+  }
+  #lightbox-toolbar {
+    display: flex;
+    gap: 0.75rem;
+  }
+  #lightbox-close {
+    position: fixed;
+    top: 1rem;
+    right: 1.25rem;
+    background: none;
+    border: none;
+    color: #e2e8f0;
+    font-size: 2rem;
+    cursor: pointer;
+    line-height: 1;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Header ── -->
+<div style="margin-bottom:1.5rem">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
+    <div>
+      <a href="/" style="font-size:0.78rem;color:#4a5568;text-decoration:none">← All runs</a>
+      <h1 style="margin-top:0.25rem">{{ run.title }}</h1>
+      <p class="muted" style="margin-top:0.1rem;font-family:monospace">{{ run.query }} &nbsp;·&nbsp; {{ run.year_from }}–{{ run.year_to }}</p>
+    </div>
+    <div id="run-status-badge">
+      {% if run.status in ("pending", "downloading") %}
+        <span class="badge badge-download">Downloading</span>
+      {% elif run.status == "done_download" %}
+        <span class="badge badge-pending">Ready to analyse</span>
+      {% elif run.status == "analysing" %}
+        <span class="badge badge-analysing">Analysing</span>
+      {% elif run.status == "done" %}
+        <span class="badge badge-done">Done</span>
+      {% elif run.status == "error" %}
+        <span class="badge badge-error">Error</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- STEP 1 — Download                                              -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="card" id="step1-card">
+  <div class="phase-header">
+    <div style="display:flex;align-items:center">
+      <span class="phase-num {% if run.status not in ('pending','downloading') %}done{% endif %}">1</span>
+      <h2 style="margin:0">Search &amp; Download</h2>
+    </div>
+  </div>
+
+  <div id="step1-body">
+    {% if run.status in ("pending", "downloading") %}
+      <div id="dl-progress-msg" style="color:#a0aec0;margin-bottom:0.5rem">Initialising…</div>
+      <div class="progress-wrap"><div class="progress-bar" id="dl-bar" style="width:0%"></div></div>
+      <p class="muted" id="dl-count">—</p>
+    {% elif run.status == "error" %}
+      <div class="alert alert-error">{{ run.error_msg or "Unknown error" }}</div>
+    {% else %}
+      <div class="alert alert-ok">
+        Download complete — <strong>{{ run.paper_count or "?" }}</strong> papers
+        ({{ run.year_from }}–{{ run.year_to }}).
+      </div>
+      <div style="margin-top:0.75rem;display:flex;gap:0.6rem;flex-wrap:wrap">
+        <a href="/run/{{ run.id }}/download/PubMed full records.csv" class="btn btn-secondary btn-sm">Download CSV</a>
+        <a href="/run/{{ run.id }}/download-xlsx/PubMed full records.csv" class="btn btn-secondary btn-sm">Download XLSX</a>
+        <a href="/run/{{ run.id }}/download/medline.txt" class="btn btn-secondary btn-sm">Download Medline</a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- STEP 2 — Content Analysis                                      -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="card" id="step2-card" {% if run.status in ('pending','downloading','error') %}style="opacity:0.4;pointer-events:none"{% endif %}>
+  <div class="phase-header">
+    <div style="display:flex;align-items:center">
+      <span class="phase-num {% if has_analysis %}done{% elif run.status in ('pending','downloading','error') %}locked{% endif %}">2</span>
+      <h2 style="margin:0">Content Analysis</h2>
+    </div>
+    {% if not has_analysis and run.status == "done_download" %}
+    <form id="analyse-form" onsubmit="startAnalysis(event)">
+      <div style="display:flex;align-items:center;gap:0.6rem">
+        <label style="margin:0;white-space:nowrap;font-size:0.78rem">Top N keywords for network</label>
+        <input type="number" name="top_n" value="300" min="10" max="1000" style="width:80px">
+        <button type="submit" class="btn btn-primary btn-sm">Run analysis</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <div id="step2-body">
+    {% if has_analysis %}
+      <div class="alert alert-ok" style="margin-bottom:1rem">Analysis complete.</div>
+
+      <!-- SVG plot gallery -->
+      <div class="tabs" id="plot-tabs">
+        {% for cat, label in [("Keywords","Keywords"),("Meshterms","MeSH Terms"),("Authors","Authors"),("Journal","Journals"),("Lemmas","TiAb Lemmas")] %}
+        <div class="tab {% if loop.first %}active{% endif %}" onclick="showPlotTab('{{ cat }}', this)">{{ label }}</div>
+        {% endfor %}
+      </div>
+
+      <div id="plot-gallery">
+        {% for cat in ["Keywords","Meshterms","Authors","Journal","Lemmas"] %}
+        <div id="gallery-{{ cat }}" {% if not loop.first %}style="display:none"{% endif %}>
+          <div class="grid-2">
+            <div>
+              <p class="muted mb-1">Raw count — top 5</p>
+              <img src="/run/{{ run.id }}/plots/{{ cat }}.svg" class="plot-img" style="width:100%;border-radius:6px;background:#1a1d27" onclick="openLightbox(this)" onerror="this.style.display='none'">
+            </div>
+            <div>
+              <p class="muted mb-1">Normalized (%) — top 5</p>
+              <img src="/run/{{ run.id }}/plots/{{ cat }}_norm.svg" class="plot-img" style="width:100%;border-radius:6px;background:#1a1d27" onclick="openLightbox(this)" onerror="this.style.display='none'">
+            </div>
+          </div>
+          {% if cat in ["Keywords","Meshterms","Authors","Journal","Lemmas"] %}
+          <div style="margin-top:0.75rem">
+            <p class="muted mb-1">Word cloud</p>
+            <img src="/run/{{ run.id }}/plots/wordcloud_{{ cat }}.svg" class="plot-img" style="max-width:500px;border-radius:6px;background:#fff" onclick="openLightbox(this)" onerror="this.style.display='none'">
+          </div>
+          {% endif %}
+          <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+            <a href="/run/{{ run.id }}/download/data/{{ cat }}.csv" class="btn btn-secondary btn-sm">Download raw CSV</a>
+            <a href="/run/{{ run.id }}/download-xlsx/data/{{ cat }}.csv" class="btn btn-secondary btn-sm">Download raw XLSX</a>
+            <a href="/run/{{ run.id }}/download/data/{{ cat }}_norm.csv" class="btn btn-secondary btn-sm">Download normalized CSV</a>
+            <a href="/run/{{ run.id }}/download-xlsx/data/{{ cat }}_norm.csv" class="btn btn-secondary btn-sm">Download normalized XLSX</a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+    {% elif run.status == "analysing" %}
+      <div id="analysis-progress-msg" style="color:#a0aec0;margin-bottom:0.5rem">Starting analysis…</div>
+      <div class="progress-wrap"><div class="progress-bar" id="analysis-bar" style="width:0%"></div></div>
+
+    {% elif run.status in ("done_download",) %}
+      <p class="muted">Run the analysis to generate trend plots, word clouds, and network tables.</p>
+
+    {% else %}
+      <p class="muted" style="color:#4a5568">Complete Step 1 first.</p>
+    {% endif %}
+
+    <div id="analysis-running" style="display:none">
+      <div id="analysis-progress-msg2" style="color:#a0aec0;margin-bottom:0.5rem">Starting…</div>
+      <div class="progress-wrap"><div class="progress-bar" id="analysis-bar2" style="width:0%"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- STEP 3 — Interactive Visualization                             -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="card" {% if not has_analysis %}style="opacity:0.4;pointer-events:none"{% endif %}>
+  <div class="phase-header">
+    <div style="display:flex;align-items:center">
+      <span class="phase-num {% if not has_analysis %}locked{% else %}done{% endif %}">3</span>
+      <h2 style="margin:0">Interactive Visualization</h2>
+    </div>
+  </div>
+
+  {% if has_analysis %}
+  <div class="tabs" id="viz-tabs">
+    {% for val, label in [("keywords","Keywords"),("mesh","MeSH Terms"),("authors","Authors"),("journals","Journals"),("lemmas","TiAb Lemmas")] %}
+    <div class="tab {% if loop.first %}active{% endif %}"
+         onclick="setVizCategory('{{ val }}', this)">{{ label }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="entity-select-area">
+    <div class="ac-wrap">
+      <input type="text" id="entity-input" placeholder="Type to search entities…" autocomplete="off"
+             oninput="onEntityInput()" onkeydown="onEntityKey(event)">
+      <div class="autocomplete-list" id="ac-list" style="display:none"></div>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="addSelectedEntity()">Add</button>
+  </div>
+
+  <div class="selected-chips" id="chips"></div>
+
+  <div class="plot-controls">
+    <label style="margin:0;display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.82rem">
+      <input type="checkbox" id="norm-toggle" onchange="renderPlot()">
+      Normalized (% of papers)
+    </label>
+    <button class="btn btn-primary btn-sm" onclick="renderPlot()">Generate plot</button>
+    <button class="btn btn-secondary btn-sm" onclick="clearEntities()">Clear</button>
+  </div>
+
+  <div class="plot-area" id="bokeh-container">
+    <p class="muted">Select at least one entity and click Generate plot.</p>
+  </div>
+
+  {% else %}
+  <p class="muted" style="color:#4a5568">Complete Step 2 first.</p>
+  {% endif %}
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- STEP 4 — Semantic Networks                                      -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="card" {% if not has_analysis %}style="opacity:0.4;pointer-events:none"{% endif %}>
+  <div class="phase-header">
+    <div style="display:flex;align-items:center">
+      <span class="phase-num {% if not has_analysis %}locked{% else %}done{% endif %}">4</span>
+      <h2 style="margin:0">Semantic Networks</h2>
+    </div>
+  </div>
+
+  {% if has_analysis %}
+
+  <!-- controls -->
+  <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:0.75rem">
+    <div>
+      <label style="font-size:0.78rem;color:#a0aec0;display:block;margin-bottom:0.3rem">Top N nodes &nbsp;<strong id="net-topn-val">100</strong></label>
+      <input type="range" id="net-topn" min="10" max="500" value="100" step="10" style="width:150px">
+    </div>
+    <div>
+      <label style="font-size:0.78rem;color:#a0aec0;display:block;margin-bottom:0.3rem">Edge weight</label>
+      <select id="net-edgemode" onchange="netEdgeModeChanged()" style="background:#1a1d27;color:#e2e8f0;border:1px solid #2d3148;border-radius:4px;padding:0.3rem 0.6rem">
+        <option value="jaccard">Jaccard similarity</option>
+        <option value="raw">Raw co-occurrence</option>
+      </select>
+    </div>
+    <div>
+      <label style="font-size:0.78rem;color:#a0aec0;display:block;margin-bottom:0.3rem" id="net-minw-label">Min Jaccard &nbsp;<strong id="net-minw-val">5</strong>%</label>
+      <input type="range" id="net-minw" min="1" max="100" value="5" style="width:120px">
+    </div>
+    <div>
+      <label style="font-size:0.78rem;color:#a0aec0;display:block;margin-bottom:0.3rem">Layout</label>
+      <select id="net-layout" style="background:#1a1d27;color:#e2e8f0;border:1px solid #2d3148;border-radius:4px;padding:0.3rem 0.6rem">
+        <option value="fa2">Force-directed</option>
+        <option value="fa2_strong">Force-directed (strong gravity)</option>
+        <option value="circular">Circular</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="buildNetwork()">Build network</button>
+  </div>
+  <div style="display:flex;gap:1rem;margin-bottom:0.5rem">
+    <span id="net-status" style="font-size:0.78rem;color:#718096"></span>
+    <span id="net-stats"  style="font-size:0.78rem;color:#718096"></span>
+  </div>
+
+  <!-- canvas -->
+  <div id="net-container" style="width:100%;height:540px;background:#0d1117;border-radius:8px;position:relative;overflow:hidden">
+    <p style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#4a5568;font-size:0.85rem;white-space:nowrap">
+      Set parameters and click Build network.
+    </p>
+  </div>
+
+  <!-- community legend -->
+  <div id="net-legend" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.75rem"></div>
+
+  <!-- downloads -->
+  <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+    <a href="/run/{{ run.id }}/download/gephi%20tables/nodes_df.csv"       class="btn btn-secondary btn-sm">Nodes CSV</a>
+    <a href="/run/{{ run.id }}/download-xlsx/gephi%20tables/nodes_df.csv"  class="btn btn-secondary btn-sm">Nodes XLSX</a>
+    <a href="/run/{{ run.id }}/download/gephi%20tables/edges_df.csv"       class="btn btn-secondary btn-sm">Edges CSV</a>
+    <a href="/run/{{ run.id }}/download-xlsx/gephi%20tables/edges_df.csv"  class="btn btn-secondary btn-sm">Edges XLSX</a>
+    <a href="/run/{{ run.id }}/download/gephi%20tables/matrix_df.csv"      class="btn btn-secondary btn-sm">Matrix CSV</a>
+    <a href="/run/{{ run.id }}/download-xlsx/gephi%20tables/matrix_df.csv" class="btn btn-secondary btn-sm">Matrix XLSX</a>
+  </div>
+
+  {% else %}
+  <p class="muted" style="color:#4a5568">Complete Step 2 first.</p>
+  {% endif %}
+</div>
+
+<!-- Cluster modal -->
+<div id="cluster-modal" onclick="if(event.target===this)closeClusterModal()"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1001;align-items:center;justify-content:center">
+  <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:1.5rem;max-width:600px;width:90%;max-height:75vh;overflow-y:auto;position:relative">
+    <button onclick="closeClusterModal()" style="position:absolute;top:0.75rem;right:1rem;background:none;border:none;color:#a0aec0;font-size:1.4rem;cursor:pointer;line-height:1">×</button>
+    <h3 id="cluster-modal-title" style="margin:0 0 1rem"></h3>
+    <div id="cluster-modal-body"></div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" onclick="closeLightbox(event)">
+  <button id="lightbox-close" onclick="closeLightbox()">×</button>
+  <img id="lightbox-img" src="" alt="">
+  <div id="lightbox-toolbar">
+    <a id="lightbox-dl" href="#" download class="btn btn-secondary btn-sm">Download SVG</a>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- JS                                                              -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<script>
+const RUN_ID = {{ run.id }};
+
+// ── Step 1 polling ─────────────────────────────────────────────────────────
+{% if run.status in ("pending", "downloading") %}
+(function pollDownload() {
+  fetch(`/api/run/${RUN_ID}/status`)
+    .then(r => r.json())
+    .then(data => {
+      const msg   = document.getElementById('dl-progress-msg');
+      const bar   = document.getElementById('dl-bar');
+      const count = document.getElementById('dl-count');
+      if (msg) msg.textContent = data.message || '';
+      if (data.total > 0 && bar) {
+        bar.style.width = Math.round(data.downloaded / data.total * 100) + '%';
+      }
+      if (count) count.textContent = `${data.downloaded || 0} / ${data.total || '?'} papers`;
+
+      if (data.status === 'done' || data.status === 'error') {
+        location.reload();
+      } else {
+        setTimeout(pollDownload, 2000);
+      }
+    })
+    .catch(() => setTimeout(pollDownload, 4000));
+})();
+{% endif %}
+
+// ── Step 2: start analysis ─────────────────────────────────────────────────
+function startAnalysis(evt) {
+  evt.preventDefault();
+  const form = document.getElementById('analyse-form');
+  const top_n = form.querySelector('[name=top_n]').value;
+
+  form.querySelector('button').disabled = true;
+  document.getElementById('analysis-running').style.display = 'block';
+
+  const fd = new FormData();
+  fd.append('top_n', top_n);
+
+  fetch(`/api/run/${RUN_ID}/analyse`, { method: 'POST', body: fd })
+    .then(() => pollAnalysis());
+}
+
+{% if run.status == "analysing" %}
+(function() { pollAnalysis(); })();
+{% endif %}
+
+function pollAnalysis() {
+  fetch(`/api/run/${RUN_ID}/analysis_status`)
+    .then(r => r.json())
+    .then(data => {
+      const msg  = document.getElementById('analysis-progress-msg2');
+      const bar  = document.getElementById('analysis-bar2');
+      if (msg) msg.textContent = data.message || '';
+      if (bar && data.steps > 0) {
+        bar.style.width = Math.round((data.step || 0) / data.steps * 100) + '%';
+      }
+      if (data.status === 'done' || data.status === 'error') {
+        location.reload();
+      } else {
+        setTimeout(pollAnalysis, 2000);
+      }
+    })
+    .catch(() => setTimeout(pollAnalysis, 4000));
+}
+
+// ── Step 2: plot tab switch ────────────────────────────────────────────────
+function showPlotTab(cat, el) {
+  document.querySelectorAll('#plot-tabs .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('#plot-gallery > div').forEach(d => d.style.display = 'none');
+  const target = document.getElementById('gallery-' + cat);
+  if (target) target.style.display = '';
+}
+
+// ── Step 3: interactive viz ────────────────────────────────────────────────
+let _vizCategory = 'keywords';
+let _entities    = [];
+let _allEntities = [];
+let _acIndex     = -1;
+
+function setVizCategory(cat, el) {
+  _vizCategory = cat;
+  _entities = [];
+  _allEntities = [];
+  document.getElementById('chips').innerHTML = '';
+  document.getElementById('entity-input').value = '';
+  document.getElementById('ac-list').style.display = 'none';
+  document.querySelectorAll('#viz-tabs .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  loadEntities();
+}
+
+function loadEntities() {
+  fetch(`/api/run/${RUN_ID}/entities?category=${_vizCategory}`)
+    .then(r => r.json())
+    .then(data => { _allEntities = data.entities || []; });
+}
+
+{% if has_analysis %}
+loadEntities();
+{% endif %}
+
+function onEntityInput() {
+  const q = document.getElementById('entity-input').value.toLowerCase().trim();
+  const list = document.getElementById('ac-list');
+  if (!q) { list.style.display = 'none'; return; }
+  const matches = _allEntities.filter(e => e.toLowerCase().includes(q)).slice(0, 30);
+  if (!matches.length) { list.style.display = 'none'; return; }
+  list.innerHTML = matches.map(m => `<div onclick="selectEntity('${m.replace(/'/g,"\\'")}')">` + m + `</div>`).join('');
+  list.style.display = 'block';
+  _acIndex = -1;
+}
+
+function onEntityKey(evt) {
+  const list = document.getElementById('ac-list');
+  const items = list.querySelectorAll('div');
+  if (evt.key === 'ArrowDown') { _acIndex = Math.min(_acIndex + 1, items.length - 1); highlightAc(items); evt.preventDefault(); }
+  else if (evt.key === 'ArrowUp') { _acIndex = Math.max(_acIndex - 1, -1); highlightAc(items); evt.preventDefault(); }
+  else if (evt.key === 'Enter') {
+    if (_acIndex >= 0 && items[_acIndex]) { items[_acIndex].click(); }
+    else { addSelectedEntity(); }
+    evt.preventDefault();
+  }
+  else if (evt.key === 'Escape') { list.style.display = 'none'; }
+}
+
+function highlightAc(items) {
+  items.forEach((el, i) => el.style.background = i === _acIndex ? '#252a3e' : '');
+}
+
+function selectEntity(name) {
+  document.getElementById('entity-input').value = name;
+  document.getElementById('ac-list').style.display = 'none';
+}
+
+function addSelectedEntity() {
+  const val = document.getElementById('entity-input').value.trim();
+  if (!val || _entities.includes(val)) return;
+  _entities.push(val);
+  document.getElementById('entity-input').value = '';
+  renderChips();
+}
+
+function removeEntity(name) {
+  _entities = _entities.filter(e => e !== name);
+  renderChips();
+}
+
+function clearEntities() {
+  _entities = [];
+  renderChips();
+  document.getElementById('bokeh-container').innerHTML = '<p class="muted">Select at least one entity and click Generate plot.</p>';
+}
+
+function renderChips() {
+  document.getElementById('chips').innerHTML = _entities
+    .map(e => `<div class="chip">${e}<button onclick="removeEntity('${e.replace(/'/g,"\\'")}')">×</button></div>`)
+    .join('');
+}
+
+function renderPlot() {
+  if (!_entities.length) { alert('Add at least one entity first.'); return; }
+  const normalized = document.getElementById('norm-toggle').checked;
+  const container  = document.getElementById('bokeh-container');
+  container.innerHTML = '<p class="muted">Generating plot…</p>';
+
+  fetch(`/api/run/${RUN_ID}/plot`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: _vizCategory, entities: _entities, normalized }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { container.innerHTML = `<div class="alert alert-error">${data.error}</div>`; return; }
+
+    container.innerHTML = '<div id="bokeh-plot"></div>';
+
+    const doEmbed = () => {
+      try {
+        Bokeh.embed.embed_item(data.item, 'bokeh-plot');
+      } catch(e) {
+        container.innerHTML = `<div class="alert alert-error">Bokeh render error: ${e}</div>`;
+      }
+    };
+
+    if (!window._bokehLoaded) {
+      const s = document.createElement('script');
+      s.src = `https://cdn.bokeh.org/bokeh/release/bokeh-${window._BOKEH_VERSION}.min.js`;
+      s.onload = () => { window._bokehLoaded = true; doEmbed(); };
+      s.onerror = () => { container.innerHTML = '<div class="alert alert-error">Failed to load Bokeh CDN.</div>'; };
+      document.head.appendChild(s);
+    } else {
+      doEmbed();
+    }
+  })
+  .catch(err => { container.innerHTML = `<div class="alert alert-error">${err}</div>`; });
+}
+
+// Close autocomplete on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('.ac-wrap')) {
+    document.getElementById('ac-list').style.display = 'none';
+  }
+});
+
+// ── Shared CDN loader ─────────────────────────────────────────────────────
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url; s.onload = resolve;
+    s.onerror = () => reject(new Error('Failed to load: ' + url));
+    document.head.appendChild(s);
+  });
+}
+
+// ── Step 4: Network visualization ─────────────────────────────────────────
+const NET_COLORS = [
+  '#4299e1','#48bb78','#ed8936','#9f7aea','#fc8181',
+  '#38b2ac','#f6e05e','#ed64a6','#667eea','#68d391',
+  '#f687b3','#fbd38d','#90cdf4','#9ae6b4','#d6bcfa',
+];
+let _netRenderer = null;
+let _netLibsLoaded = false;
+let _hoveredNode = null;
+let _communityNodes = {};
+
+async function buildNetwork() {
+  const container = document.getElementById('net-container');
+  const setStatus = msg => { const el = document.getElementById('net-status'); if (el) el.textContent = msg; };
+  setStatus('Loading libraries…');
+  try {
+    if (!_netLibsLoaded) {
+      await loadScript('https://cdn.jsdelivr.net/npm/graphology@0.25.4/dist/graphology.umd.min.js');
+      await loadScript('https://cdn.jsdelivr.net/npm/sigma@2.4.0/build/sigma.min.js');
+      _netLibsLoaded = true;
+    }
+    setStatus('Loading data…');
+    const [nodesText, edgesText] = await Promise.all([
+      fetch(`/run/${RUN_ID}/download/gephi%20tables/nodes_df.csv`).then(r => { if (!r.ok) throw new Error('nodes_df.csv not found'); return r.text(); }),
+      fetch(`/run/${RUN_ID}/download/gephi%20tables/edges_df.csv`).then(r => { if (!r.ok) throw new Error('edges_df.csv not found'); return r.text(); }),
+    ]);
+
+    const topN      = parseInt(document.getElementById('net-topn').value);
+    const minW      = parseInt(document.getElementById('net-minw').value);
+    const layout    = document.getElementById('net-layout').value;
+    const edgeMode  = document.getElementById('net-edgemode').value;
+
+    const allNodes = parseNetCSV(nodesText);
+    const allEdges = parseNetCSV(edgesText);
+
+    const topNodes = [...allNodes].sort((a, b) => parseFloat(b.Count) - parseFloat(a.Count)).slice(0, topN);
+    const nodeSet  = new Set(topNodes.map(n => n.Id));
+    const filtEdges = allEdges.filter(e => {
+      if (!nodeSet.has(e.Source) || !nodeSet.has(e.Target)) return false;
+      if (edgeMode === 'jaccard') return parseFloat(e.Jaccard || 0) * 100 >= minW;
+      return parseFloat(e.Count) >= minW;
+    });
+
+    // build graph — try all known UMD export names for graphology
+    const _gLib = (typeof graphologyLibrary !== 'undefined' && graphologyLibrary)
+               || (typeof graphology        !== 'undefined' && graphology)
+               || (typeof Graph             !== 'undefined' && Graph);
+    if (!_gLib) {
+      const graphGlobals = Object.keys(window).filter(k => /graph/i.test(k));
+      throw new Error('Graphology not found. Globals with "graph": ' + (graphGlobals.join(', ') || 'none'));
+    }
+    const GraphCtor = (typeof _gLib === 'function') ? _gLib
+                    : (_gLib.UndirectedGraph || _gLib.Graph || _gLib);
+    const graph = new GraphCtor();
+
+    const maxCount = Math.max(...topNodes.map(n => parseFloat(n.Count) || 1));
+    topNodes.forEach(n => graph.addNode(n.Id, {
+      label: n.Label || n.Id,
+      size:  3 + 12 * Math.sqrt(parseFloat(n.Count) || 1) / Math.sqrt(maxCount),
+      x: Math.random() * 2 - 1,
+      y: Math.random() * 2 - 1,
+      color: '#718096',
+    }));
+    filtEdges.forEach(e => {
+      if (graph.hasNode(e.Source) && graph.hasNode(e.Target) && !graph.hasEdge(e.Source, e.Target)) {
+        const w = edgeMode === 'jaccard'
+          ? parseFloat(e.Jaccard || 0)
+          : parseFloat(e.Count) || 1;
+        const eSize = edgeMode === 'jaccard' ? Math.max(1, w * 8) : Math.max(1, Math.min(5, w / 3));
+        try { graph.addEdge(e.Source, e.Target, { weight: w, size: eSize, color: '#4a6090' }); } catch {}
+      }
+    });
+
+    // community detection
+    const communities = labelPropagation(graph);
+    graph.forEachNode(n => {
+      const c = communities[n] || 0;
+      graph.setNodeAttribute(n, 'color', NET_COLORS[c % NET_COLORS.length]);
+    });
+
+    // layout
+    setStatus(layout === 'circular' ? 'Applying circular layout…' : 'Running force-directed layout…');
+    await new Promise(r => setTimeout(r, 0));
+    if (layout === 'circular') {
+      const ns = graph.nodes();
+      ns.forEach((n, i) => {
+        const a = 2 * Math.PI * i / ns.length;
+        graph.setNodeAttribute(n, 'x', Math.cos(a));
+        graph.setNodeAttribute(n, 'y', Math.sin(a));
+      });
+    } else {
+      netLayoutFR(graph, layout === 'fa2_strong' ? 400 : 200);
+    }
+
+    // render
+    if (_netRenderer) { _netRenderer.kill(); _netRenderer = null; }
+    container.innerHTML = '';
+    _hoveredNode = null;
+
+    _netRenderer = new Sigma(graph, container, {
+      renderEdgeLabels: false,
+      labelThreshold: 5,
+      labelColor: { color: '#e2e8f0' },
+      defaultEdgeColor: '#2a3050',
+      nodeReducer: (node, data) => {
+        if (_hoveredNode === null) return data;
+        if (node === _hoveredNode || graph.neighbors(_hoveredNode).includes(node)) return data;
+        return {...data, color: '#1a2030', label: null, size: data.size * 0.4};
+      },
+      edgeReducer: (edge, data) => {
+        if (_hoveredNode === null) return data;
+        const [s, t] = graph.extremities(edge);
+        if (s === _hoveredNode || t === _hoveredNode) return {...data, color: '#c0d0f0', size: (data.size || 1) * 2};
+        return {...data, hidden: true};
+      },
+    });
+    _netRenderer.on('enterNode', ({node}) => { _hoveredNode = node; _netRenderer.refresh(); });
+    _netRenderer.on('leaveNode', () => { _hoveredNode = null; _netRenderer.refresh(); });
+
+    // stats
+    const statsEl = document.getElementById('net-stats');
+    if (statsEl) statsEl.textContent = `${graph.order} nodes · ${graph.size} edges`;
+    setStatus('');
+
+    // build community → nodes map for modal
+    _communityNodes = {};
+    graph.forEachNode((node, attrs) => {
+      const c = communities[node] || 0;
+      if (!_communityNodes[c]) _communityNodes[c] = [];
+      _communityNodes[c].push(attrs.label || node);
+    });
+
+    // legend with clickable chips
+    const counts = {};
+    Object.values(communities).forEach(c => { counts[c] = (counts[c] || 0) + 1; });
+    const legend = document.getElementById('net-legend');
+    if (legend) {
+      legend.innerHTML = Object.entries(counts).sort(([,a],[,b]) => b-a).slice(0, 10)
+        .map(([c, cnt]) =>
+          `<span onclick="openClusterModal(${c})" style="cursor:pointer;background:${NET_COLORS[c % NET_COLORS.length]};color:#0d1117;padding:0.2rem 0.6rem;border-radius:4px;font-size:0.75rem;font-weight:600">
+            Cluster ${parseInt(c)+1} · ${cnt} nodes
+          </span>`).join('');
+    }
+  } catch(err) {
+    container.innerHTML = `<div class="alert alert-error" style="margin:1rem">Network error: ${err.message}</div>`;
+    document.getElementById('net-status').textContent = '';
+  }
+}
+
+function parseNetCSV(text) {
+  const rows = text.trim().split('\n');
+  const headers = splitCSVLine(rows[0]);
+  return rows.slice(1).filter(r => r.trim()).map(row => {
+    const vals = splitCSVLine(row);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = vals[i] !== undefined ? vals[i] : ''; });
+    return obj;
+  });
+}
+
+function splitCSVLine(line) {
+  const result = []; let inQ = false, cur = '';
+  for (const ch of line) {
+    if (ch === '"') { inQ = !inQ; }
+    else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+    else { cur += ch; }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function labelPropagation(graph) {
+  const comm = {};
+  graph.nodes().forEach((n, i) => { comm[n] = i; });
+  for (let iter = 0; iter < 20; iter++) {
+    let changed = false;
+    for (const node of graph.nodes()) {
+      const scores = {};
+      graph.forEachNeighbor(node, nb => {
+        let w = 1;
+        try { w = graph.getEdgeAttribute(graph.edge(node, nb), 'weight') || 1; } catch {}
+        const c = comm[nb];
+        scores[c] = (scores[c] || 0) + w;
+      });
+      if (!Object.keys(scores).length) continue;
+      const best = parseInt(Object.entries(scores).sort(([,a],[,b]) => b-a)[0][0]);
+      if (best !== comm[node]) { comm[node] = best; changed = true; }
+    }
+    if (!changed) break;
+  }
+  const sorted = [...new Set(Object.values(comm))].sort((a, b) => {
+    const ca = Object.values(comm).filter(c => c === a).length;
+    const cb = Object.values(comm).filter(c => c === b).length;
+    return cb - ca;
+  });
+  const remap = {}; sorted.forEach((id, i) => { remap[id] = i; });
+  const result = {};
+  for (const [n, c] of Object.entries(comm)) result[n] = remap[c];
+  return result;
+}
+
+function netLayoutFR(graph, iterations) {
+  const nodes = graph.nodes();
+  if (!nodes.length) return;
+  // Ideal edge length scales with sqrt(n) so the graph expands as nodes increase.
+  // C=3 gives comfortable separation for 50–300 nodes; 'strong' passes a higher multiplier.
+  const k = 3 * Math.sqrt(nodes.length);
+  // Re-seed positions uniformly across a square of side 6k so FR has room to work.
+  nodes.forEach(n => {
+    graph.setNodeAttribute(n, 'x', (Math.random() - 0.5) * k * 6);
+    graph.setNodeAttribute(n, 'y', (Math.random() - 0.5) * k * 6);
+  });
+  for (let iter = 0; iter < iterations; iter++) {
+    // Temperature decays linearly from k (full step freedom) to near zero.
+    const t = k * Math.max(0.001, 1 - iter / iterations);
+    const disp = {};
+    nodes.forEach(n => { disp[n] = {x: 0, y: 0}; });
+    // Repulsion: keep a minimum distance equal to the sum of node radii so
+    // large hub nodes don't crush smaller neighbours.
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const u = nodes[i], v = nodes[j];
+        const dx = graph.getNodeAttribute(u,'x') - graph.getNodeAttribute(v,'x');
+        const dy = graph.getNodeAttribute(u,'y') - graph.getNodeAttribute(v,'y');
+        const minD = (graph.getNodeAttribute(u,'size') + graph.getNodeAttribute(v,'size')) * 0.6;
+        const dist = Math.max(Math.hypot(dx, dy), minD, 0.001);
+        const f = k * k / dist;
+        disp[u].x += dx/dist*f; disp[u].y += dy/dist*f;
+        disp[v].x -= dx/dist*f; disp[v].y -= dy/dist*f;
+      }
+    }
+    graph.forEachEdge((edge, attrs, src, tgt) => {
+      const dx = graph.getNodeAttribute(src,'x') - graph.getNodeAttribute(tgt,'x');
+      const dy = graph.getNodeAttribute(src,'y') - graph.getNodeAttribute(tgt,'y');
+      const dist = Math.max(0.001, Math.hypot(dx, dy));
+      const f = dist * dist / k;
+      disp[src].x -= dx/dist*f; disp[src].y -= dy/dist*f;
+      disp[tgt].x += dx/dist*f; disp[tgt].y += dy/dist*f;
+    });
+    nodes.forEach(node => {
+      const d = disp[node];
+      const len = Math.max(0.001, Math.hypot(d.x, d.y));
+      const cap = Math.min(len, t);
+      graph.setNodeAttribute(node, 'x', graph.getNodeAttribute(node,'x') + d.x/len*cap);
+      graph.setNodeAttribute(node, 'y', graph.getNodeAttribute(node,'y') + d.y/len*cap);
+    });
+  }
+}
+
+document.getElementById('net-topn')?.addEventListener('input', e => { document.getElementById('net-topn-val').textContent = e.target.value; });
+document.getElementById('net-minw')?.addEventListener('input', e => { document.getElementById('net-minw-val').textContent = e.target.value; });
+
+function openClusterModal(c) {
+  const nodes = _communityNodes[c] || [];
+  const color  = NET_COLORS[c % NET_COLORS.length];
+  document.getElementById('cluster-modal-title').textContent = `Cluster ${parseInt(c)+1} — ${nodes.length} nodes`;
+  document.getElementById('cluster-modal-title').style.color = color;
+  document.getElementById('cluster-modal-body').innerHTML = nodes.sort()
+    .map(n => `<span style="display:inline-block;background:#1a2030;border:1px solid #2d3148;border-radius:4px;padding:0.2rem 0.5rem;margin:0.2rem;font-size:0.82rem">${n}</span>`)
+    .join('');
+  document.getElementById('cluster-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeClusterModal() {
+  document.getElementById('cluster-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function netEdgeModeChanged() {
+  const mode   = document.getElementById('net-edgemode').value;
+  const slider = document.getElementById('net-minw');
+  const label  = document.getElementById('net-minw-label');
+  const val    = document.getElementById('net-minw-val');
+  if (mode === 'jaccard') {
+    slider.min = 1; slider.max = 100; slider.value = 5;
+    label.innerHTML = 'Min Jaccard &nbsp;<strong id="net-minw-val">5</strong>%';
+  } else {
+    slider.min = 1; slider.max = 50; slider.value = 2;
+    label.innerHTML = 'Min co-occurrence &nbsp;<strong id="net-minw-val">2</strong>';
+  }
+  document.getElementById('net-minw').addEventListener('input', e => {
+    document.getElementById('net-minw-val').textContent = e.target.value;
+  });
+}
+
+// ── Lightbox ───────────────────────────────────────────────────────────────
+function openLightbox(img) {
+  const lb  = document.getElementById('lightbox');
+  const lbi = document.getElementById('lightbox-img');
+  const dl  = document.getElementById('lightbox-dl');
+  lbi.src = img.src;
+  dl.href = img.src;
+  dl.download = img.src.split('/').pop();
+  lb.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox(evt) {
+  if (evt && evt.target.id === 'lightbox-img') return;
+  document.getElementById('lightbox').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLightbox();
+});
+</script>
+
+{% endblock %}

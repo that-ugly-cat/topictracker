@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+jinja2==3.1.3
+python-jose[cryptography]
+bcrypt
+openpyxl
+sqlalchemy
+python-multipart
+pandas
+matplotlib
+bokeh
+spacy
+urllib3
+tqdm
+wordcloud

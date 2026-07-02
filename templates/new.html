@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}TopicTracker — New run{% endblock %}
+
+{% block content %}
+<div style="max-width:580px">
+  <h1 style="margin-bottom:0.25rem">New run</h1>
+  <p class="muted" style="margin-bottom:2rem">Define your PubMed search. Download may take several hours for large corpora.</p>
+
+  <div class="card">
+    <form method="post" action="/new">
+
+      <label for="title">Run title</label>
+      <input type="text" id="title" name="title" placeholder="e.g. Psychedelics in psychiatry 2005-2024" required>
+
+      <label for="query">PubMed query</label>
+      <input type="text" id="query" name="query" placeholder='e.g. psychedelics[tiab] OR psilocybin[tiab]' required>
+      <p class="muted mt-1">Use standard PubMed query syntax. The search is segmented by year automatically to stay under the 100k-per-query NCBI limit.</p>
+
+      <div class="grid-2" style="margin-top:1rem">
+        <div>
+          <label for="year_from">Year from</label>
+          <input type="number" id="year_from" name="year_from" min="1950" max="{{ current_year }}" value="2010" required>
+        </div>
+        <div>
+          <label for="year_to">Year to</label>
+          <input type="number" id="year_to" name="year_to" min="1950" max="{{ current_year }}" value="{{ current_year }}" required>
+        </div>
+      </div>
+
+      <div class="alert alert-info" style="margin-top:1.5rem">
+        Download rate is ~0.6 s/paper (NCBI policy). Estimated time:
+        for 1 000 papers ~10 min, for 10 000 papers ~100 min, for 20 000 papers ~3 h.
+        The page will update automatically — you can close and return later.
+      </div>
+
+      <div style="display:flex;gap:0.75rem;margin-top:1.5rem">
+        <button type="submit" class="btn btn-primary">Start download</button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+      </div>
+
+    </form>
+  </div>
+</div>
+{% endblock %}

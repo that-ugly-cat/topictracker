@@ -1,0 +1,12 @@
+# TopicTracker
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+*.sqlite3
+.env
+.DS_Store
+.venv/
+data/
+export/
+static/

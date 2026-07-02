@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TopicTracker — Sign in</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      background: #0f1117;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #e2e8f0;
+    }
+
+    .landing {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 4rem;
+      border-right: 1px solid #1e2235;
+    }
+
+    .brand {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      letter-spacing: -0.03em;
+      margin-bottom: 1rem;
+    }
+
+    .brand span { color: #4a6fa5; }
+
+    .tagline {
+      font-size: 0.95rem;
+      color: #718096;
+      line-height: 1.75;
+      max-width: 520px;
+      margin-bottom: 3rem;
+    }
+
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+      max-width: 480px;
+    }
+
+    .feature-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      font-size: 0.85rem;
+      color: #a0aec0;
+      line-height: 1.5;
+    }
+
+    .feature-list .icon {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      margin-top: 0.1rem;
+    }
+
+    .credits {
+      margin-top: 3rem;
+      font-size: 0.72rem;
+      color: #4a5568;
+      line-height: 1.6;
+    }
+
+    .credits a { color: #4a6fa5; text-decoration: none; }
+    .credits a:hover { color: #63b3ed; }
+
+    .login-panel {
+      width: 340px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem;
+    }
+
+    .login-card { width: 100%; }
+
+    .login-card .title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.25rem;
+    }
+
+    .login-card .sub {
+      font-size: 0.78rem;
+      color: #718096;
+      margin-bottom: 2rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.75rem;
+      color: #a0aec0;
+      margin-bottom: 0.3rem;
+      margin-top: 1rem;
+    }
+
+    input {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    input:focus { border-color: #4a6fa5; }
+
+    .btn-submit {
+      width: 100%;
+      margin-top: 1.6rem;
+      padding: 0.65rem;
+      background: #0a3c8a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-submit:hover { background: #0d4fa8; }
+
+    .error {
+      margin-top: 1rem;
+      padding: 0.6rem 0.8rem;
+      background: #2d1515;
+      border: 1px solid #7b2020;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      color: #fc8181;
+    }
+
+    @media (max-width: 760px) {
+      body { flex-direction: column; }
+      .landing { border-right: none; border-bottom: 1px solid #1e2235; padding: 2.5rem 1.5rem; }
+      .login-panel { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="landing">
+    <div class="brand">Topic<span>Tracker</span></div>
+    <p class="tagline">
+      Search, download, and analyse PubMed literature at scale.
+      Track keyword and MeSH term trends, explore co-occurrence networks,
+      and export data for Gephi — all in one web interface.
+    </p>
+
+    <ul class="feature-list">
+      <li>
+        <div class="icon">1</div>
+        <div><strong style="color:#e2e8f0">Search &amp; Download</strong> — query PubMed by keyword and year range; full MEDLINE records downloaded automatically.</div>
+      </li>
+      <li>
+        <div class="icon">2</div>
+        <div><strong style="color:#e2e8f0">Content Analysis</strong> — keyword, MeSH, author, journal, and lemma trends with normalization and SVG exports.</div>
+      </li>
+      <li>
+        <div class="icon">3</div>
+        <div><strong style="color:#e2e8f0">Interactive Visualization</strong> — Bokeh line charts; pick any entity and compare trends across years.</div>
+      </li>
+      <li>
+        <div class="icon">4</div>
+        <div><strong style="color:#e2e8f0">Semantic Networks</strong> — keyword co-occurrence tables (nodes, edges, matrix) ready for Gephi.</div>
+      </li>
+    </ul>
+
+    <p class="credits">
+      Developed by <a href="https://www.ibme.uzh.ch/en/Biomedical-Ethics/Team/Research-Fellows/Giovanni-Spitale.html" target="_blank">Giovanni Spitale</a>,
+      Institute of Biomedical Ethics and History of Medicine, University of Zurich.<br>
+      <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC11399583/" target="_blank" rel="noopener" style="display:inline-block;margin-top:0.6rem;padding:0.4rem 0.9rem;background:#1a1d27;border:1px solid #2d3148;border-radius:6px;color:#a0aec0;font-size:0.78rem;text-decoration:none;letter-spacing:0.01em">Read the paper ↗</a>
+    </p>
+  </div>
+
+  <div class="login-panel">
+    <div class="login-card">
+      <div class="title">Sign in</div>
+      <div class="sub">Enter your credentials to access TopicTracker</div>
+
+      <form method="post" action="/login">
+        <input type="hidden" name="next" value="{{ next }}">
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" autocomplete="email" required autofocus>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+        <button type="submit" class="btn-submit">Sign in</button>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+
+</body>
+</html>
