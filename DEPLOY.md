@@ -42,7 +42,7 @@ corpus and analysis outputs.
 Example **Caddy**:
 
 ```
-topictracker.example.org {
+yourdomain.example {
     reverse_proxy localhost:8004
 }
 ```
