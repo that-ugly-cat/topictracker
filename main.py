@@ -55,7 +55,25 @@ def _run_export_dir(run: Run) -> Path:
     return EXPORT_ROOT / run.export_dir if run.export_dir else EXPORT_ROOT
 
 
-def _redirect_login(next: str = "/") -> RedirectResponse:
+def _redirect_login(next: str = "/app"):
+    """Dove mandare chi non e' autenticato su una pagina che lo richiede.
+
+    In `gateway` **non** si rimanda a `/login`: quella rotta, in questa
+    modalita', l'app la spegne da se' e rimanda indietro — i due si
+    rimbalzerebbero all'infinito. In produzione non capita, perche' il gate
+    intercetta prima; ma se il matcher del proxy fosse sbagliato si girerebbe a
+    vuoto invece di ricevere un errore, e un anello e' molto piu' difficile da
+    diagnosticare di un codice di stato.
+
+    Il messaggio e' quello di Onopedia: parla all'**operatore**, perche'
+    l'assenza di identita' qui significa che il gate non ha girato — un guasto
+    di configurazione, non della persona.
+    """
+    if gateway_mode():
+        raise HTTPException(status_code=503, detail=(
+            "Gateway mode: no valid identity in the X-Borant-* headers. Check "
+            "that the gate really sits in front of this app and that "
+            "BORANT_TRUSTED_PROXY lists the address the proxy connects from."))
     return RedirectResponse(f"/login?next={next}", status_code=302)
 
 
@@ -78,9 +96,9 @@ def login_page(request: Request, next: str = "/", error: str = ""):
     # reverse proxy, e due anagrafiche per uno strumento sono esattamente cio'
     # che l'SSO esiste per togliere.
     if gateway_mode():
-        return RedirectResponse("/", status_code=302)
+        return RedirectResponse("/app", status_code=302)
     return templates.TemplateResponse(request, "login.html", {
-        "next": next, "error": error,
+        "next": next, "error": error, "mostra_login": True,
     })
 
 
@@ -93,7 +111,7 @@ def login(
     db: Session = Depends(get_db),
 ):
     if gateway_mode():
-        return RedirectResponse("/", status_code=302)
+        return RedirectResponse("/app", status_code=302)
     user = db.query(User).filter(User.email == email, User.is_active == True).first()
     if not user or not verify_password(password, user.password_hash):
         return RedirectResponse(f"/login?next={next}&error=Invalid+credentials", status_code=302)
@@ -118,6 +136,20 @@ def logout():
 # ── Run list ──────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
+def landing(request: Request):
+    """La vetrina pubblica. Sta fuori dal gate e **non guarda mai chi sei**.
+
+    Sul ramo pubblico gli header d'identita' vengono tolti per costruzione,
+    quindi un ramo su `user` qui sarebbe sempre falso in `gateway` e a volte
+    vero in `local`: la stessa pagina con due comportamenti. Non guardando, e'
+    identica ovunque, e il bottone verso `/app` copre i quattro casi. E non
+    mostra numeri interni: quante run, quanti utenti.
+    """
+    return templates.TemplateResponse(request, "login.html",
+                                      {"next": "/app", "error": "", "mostra_login": False})
+
+
+@app.get("/app", response_class=HTMLResponse)
 def index(
     request: Request,
     session: str | None = Cookie(default=None),
@@ -125,7 +157,7 @@ def index(
 ):
     user = get_user_or_none(session, db, request)
     if not user:
-        return _redirect_login("/")
+        return _redirect_login("/app")
 
     if user.is_admin:
         runs = db.query(Run).order_by(Run.created_at.desc()).all()
@@ -493,7 +525,7 @@ def delete_run(
 ):
     user = get_user_or_none(session, db, request)
     if not user:
-        return _redirect_login("/")
+        return _redirect_login("/app")
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run or (run.user_id != user.id and not user.is_admin):
         raise HTTPException(404)
@@ -503,7 +535,7 @@ def delete_run(
     import shutil
     if export_dir.exists():
         shutil.rmtree(export_dir, ignore_errors=True)
-    return RedirectResponse("/", status_code=302)
+    return RedirectResponse("/app", status_code=302)
 
 
 @app.post("/admin/users")

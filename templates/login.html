@@ -196,6 +196,25 @@
     </p>
   </div>
 
+  <!-- La stessa pagina fa da vetrina pubblica e da pagina di accesso: la copy e
+       il CSS sono gli stessi, cambia solo questo pannello. `/` la rende senza
+       form e chiunque puo' leggerla; `/login` la rende col form, e in
+       AUTH_MODE=gateway l'app spegne quella rotta da se'.
+
+       Il bottone punta a `/app`, che e' **gated**, e non a `/login`. Questa
+       pagina sta sul ramo pubblico, dove l'identita' viene tolta per
+       costruzione: non puo' sapere chi la legge e non ci prova. Puntando a un
+       path gated funziona identica nei quattro casi — col gate o senza, gia'
+       dentro o no. -->
+  {% if not mostra_login %}
+  <div class="login-panel">
+    <div class="login-card">
+      <div class="title">Sign in</div>
+      <div class="sub">Enter your credentials to access TopicTracker</div>
+      <a href="/app" class="btn-submit" style="display:block;text-align:center;text-decoration:none;margin-top:1.2rem">Sign in →</a>
+    </div>
+  </div>
+  {% else %}
   <div class="login-panel">
     <div class="login-card">
       <div class="title">Sign in</div>
@@ -218,6 +237,7 @@
       </form>
     </div>
   </div>
+  {% endif %}
 
 </body>
 </html>
