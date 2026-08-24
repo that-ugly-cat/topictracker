@@ -30,6 +30,11 @@ class User(Base):
     name          = Column(String)
     is_active     = Column(Boolean, default=True)
     is_admin      = Column(Boolean, default=False)
+    # Il subject con cui un gate SSO conosce questa persona. NULL finche' non lo
+    # si lega a mano con map_borant.py, e in AUTH_MODE=local non lo legge
+    # nessuno. Unique perche' due righe locali non possono essere la stessa
+    # persona di la'.
+    borant_sub    = Column(String, unique=True, nullable=True)
     created_at    = Column(DateTime, default=datetime.utcnow)
 
     runs = relationship("Run", back_populates="user")
@@ -59,6 +64,11 @@ def init_db():
     with engine.connect() as conn:
         for stmt in [
             "ALTER TABLE runs ADD COLUMN error_msg TEXT",
+            # 2026-08-24. ALTER TABLE non accetta UNIQUE, quindi il vincolo
+            # arriva come indice parziale a parte.
+            "ALTER TABLE users ADD COLUMN borant_sub VARCHAR",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_borant_sub "
+            "ON users(borant_sub) WHERE borant_sub IS NOT NULL",
         ]:
             try:
                 conn.execute(text(stmt))

@@ -31,8 +31,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from auth import (
-    create_token, get_current_user, get_user_or_none,
-    hash_password, require_admin, verify_password,
+    AUTH_MODE, BORANT_LOGOUT_URL, create_token, gateway_mode, get_current_user,
+    get_user_or_none, hash_password, require_admin, verify_password,
 )
 from models import Run, User, get_db, init_db
 from pipeline import JOBS, get_job, start_download
@@ -59,10 +59,26 @@ def _redirect_login(next: str = "/") -> RedirectResponse:
     return RedirectResponse(f"/login?next={next}", status_code=302)
 
 
+@app.get("/healthz")
+def healthz():
+    """Liveness, e sta fuori da qualunque gate.
+
+    Non e' monitoraggio: dice che il processo risponde, non che una run sia
+    andata a buon fine. Quelle stanno in `runs.status`.
+    """
+    return {"ok": True, "mode": AUTH_MODE}
+
+
 # ── Auth routes ───────────────────────────────────────────────────────────────
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/", error: str = ""):
+    # In gateway l'app spegne il proprio login da se', invece di affidarsi al
+    # proxy per nasconderlo: l'app conosce la propria modalita' meglio del
+    # reverse proxy, e due anagrafiche per uno strumento sono esattamente cio'
+    # che l'SSO esiste per togliere.
+    if gateway_mode():
+        return RedirectResponse("/", status_code=302)
     return templates.TemplateResponse(request, "login.html", {
         "next": next, "error": error,
     })
@@ -76,6 +92,8 @@ def login(
     next: str = Form("/"),
     db: Session = Depends(get_db),
 ):
+    if gateway_mode():
+        return RedirectResponse("/", status_code=302)
     user = db.query(User).filter(User.email == email, User.is_active == True).first()
     if not user or not verify_password(password, user.password_hash):
         return RedirectResponse(f"/login?next={next}&error=Invalid+credentials", status_code=302)
@@ -87,7 +105,12 @@ def login(
 
 @app.get("/logout")
 def logout():
-    resp = RedirectResponse("/login", status_code=302)
+    # Buttare il cookie locale non e' uscire, se la sessione la tiene il gate:
+    # al click dopo si rientra. Il bersaglio e' la GET /logout del gate, che
+    # **chiede**; a revocare e' la POST, e deve restare una POST o un
+    # <img src> su un sito qualunque butterebbe fuori chi lo guarda.
+    target = BORANT_LOGOUT_URL if gateway_mode() else "/login"
+    resp = RedirectResponse(target, status_code=302)
     resp.delete_cookie("session")
     return resp
 
@@ -100,7 +123,7 @@ def index(
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return _redirect_login("/")
 
@@ -122,7 +145,7 @@ def new_run_page(
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return _redirect_login("/new")
     current_year = datetime.now().year
@@ -133,6 +156,7 @@ def new_run_page(
 
 @app.post("/new")
 def create_run(
+    request: Request,
     session: str | None = Cookie(default=None),
     title: str = Form(...),
     query: str = Form(...),
@@ -140,7 +164,7 @@ def create_run(
     year_to: int = Form(...),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return _redirect_login("/new")
 
@@ -179,7 +203,7 @@ def run_page(
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return _redirect_login(f"/run/{run_id}")
 
@@ -203,11 +227,12 @@ def run_page(
 
 @app.get("/api/run/{run_id}/status")
 def download_status(
+    request: Request,
     run_id: int,
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return JSONResponse({"error": "unauthenticated"}, status_code=401)
 
@@ -237,12 +262,13 @@ def download_status(
 
 @app.post("/api/run/{run_id}/analyse")
 def start_analysis_route(
+    request: Request,
     run_id: int,
     top_n: int = Form(300),
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return JSONResponse({"error": "unauthenticated"}, status_code=401)
 
@@ -266,11 +292,12 @@ def start_analysis_route(
 
 @app.get("/api/run/{run_id}/analysis_status")
 def analysis_status(
+    request: Request,
     run_id: int,
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return JSONResponse({"error": "unauthenticated"}, status_code=401)
 
@@ -300,12 +327,13 @@ def analysis_status(
 
 @app.get("/api/run/{run_id}/entities")
 def entity_list(
+    request: Request,
     run_id: int,
     category: str,
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return JSONResponse({"error": "unauthenticated"}, status_code=401)
 
@@ -327,7 +355,7 @@ async def make_plot(
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return JSONResponse({"error": "unauthenticated"}, status_code=401)
 
@@ -355,12 +383,13 @@ async def make_plot(
 
 @app.get("/run/{run_id}/plots/{name}")
 def serve_plot(
+    request: Request,
     run_id: int,
     name: str,
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         raise HTTPException(401)
 
@@ -378,6 +407,7 @@ def serve_plot(
 
 @app.get("/run/{run_id}/download-xlsx/{filepath:path}")
 def download_xlsx(
+    request: Request,
     run_id: int,
     filepath: str,
     session: str | None = Cookie(default=None),
@@ -385,7 +415,7 @@ def download_xlsx(
 ):
     import io
     import pandas as pd
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         raise HTTPException(401)
     run = db.query(Run).filter(Run.id == run_id).first()
@@ -413,12 +443,13 @@ def download_xlsx(
 
 @app.get("/run/{run_id}/download/{filepath:path}")
 def download_file(
+    request: Request,
     run_id: int,
     filepath: str,
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         raise HTTPException(401)
 
@@ -444,7 +475,7 @@ def admin_page(
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return _redirect_login("/admin")
     if not user.is_admin:
@@ -455,11 +486,12 @@ def admin_page(
 
 @app.post("/run/{run_id}/delete")
 def delete_run(
+    request: Request,
     run_id: int,
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user:
         return _redirect_login("/")
     run = db.query(Run).filter(Run.id == run_id).first()
@@ -476,6 +508,7 @@ def delete_run(
 
 @app.post("/admin/users")
 def create_user(
+    request: Request,
     session: str | None = Cookie(default=None),
     email: str = Form(...),
     name: str = Form(""),
@@ -483,7 +516,7 @@ def create_user(
     is_admin: bool = Form(False),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user or not user.is_admin:
         raise HTTPException(403)
     if db.query(User).filter(User.email == email).first():
@@ -495,11 +528,12 @@ def create_user(
 
 @app.post("/admin/users/{uid}/toggle")
 def toggle_user(
+    request: Request,
     uid: int,
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user or not user.is_admin:
         raise HTTPException(403)
     target = db.query(User).filter(User.id == uid).first()
@@ -512,11 +546,12 @@ def toggle_user(
 
 @app.post("/admin/users/{uid}/delete")
 def delete_user(
+    request: Request,
     uid: int,
     session: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
-    user = get_user_or_none(session, db)
+    user = get_user_or_none(session, db, request)
     if not user or not user.is_admin:
         raise HTTPException(403)
     target = db.query(User).filter(User.id == uid).first()
