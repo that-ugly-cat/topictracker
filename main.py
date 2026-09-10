@@ -5,6 +5,7 @@ Routes:
   GET  /login               login page
   POST /login               authenticate
   GET  /logout              clear cookie
+  GET  /guide               user guide (public, rendered from guide.md)
   GET  /                    list user's runs
   GET  /new                 new run form
   POST /new                 create run + start download
@@ -85,6 +86,22 @@ def healthz():
     andata a buon fine. Quelle stanno in `runs.status`.
     """
     return {"ok": True, "mode": AUTH_MODE}
+
+
+@app.get("/guide", response_class=HTMLResponse)
+def guide(request: Request):
+    """The user guide, rendered from `guide.md`, and public like the landing.
+
+    It is linked from the card on borant.eu/tools, where the reader has no
+    account yet and is deciding whether the tool is worth asking for one. Behind
+    the gate it would document the app to the people who already use it, which
+    is the wrong half of the audience. One source of truth: the markdown in the
+    repository, so the guide cannot drift from what ships.
+    """
+    import markdown
+    md_text = (Path(__file__).parent / "guide.md").read_text(encoding="utf-8")
+    body = markdown.markdown(md_text, extensions=["tables", "fenced_code"])
+    return templates.TemplateResponse(request, "guide.html", {"guide_html": body})
 
 
 # ── Auth routes ───────────────────────────────────────────────────────────────

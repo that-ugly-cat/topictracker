@@ -14,3 +14,4 @@ spacy
 urllib3
 tqdm
 wordcloud
+markdown
