@@ -1,5 +1,6 @@
 services:
   topictracker:
+    container_name: topictracker
     build: .
     restart: unless-stopped
     ports:
