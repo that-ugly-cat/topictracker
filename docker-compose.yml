@@ -3,9 +3,25 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "8004:8000"
+      - "127.0.0.1:8004:8000"
     volumes:
       - ./data:/app/data
       - ./export:/app/export
     environment:
       - JWT_SECRET=${JWT_SECRET}
+      # Borant ID, 24/8/2026. BORANT_TRUSTED_PROXY misurato dal log di uvicorn:
+      # gateway della rete topictracker_default, unica rete del container.
+      - AUTH_MODE=gateway
+      - BORANT_TRUSTED_PROXY=172.25.0.1
+
+# Subnet fissata il 19 set 2026. I gateway delle reti Docker finiscono in
+# BORANT_TRUSTED_PROXY, e senza un pin dipendono dall'ordine di creazione:
+# bastava una risalita in ordine diverso perche' quindici app iniziassero a
+# rifiutare le identita' del gate con un 503 che sembra un guasto di auth.
+# Le app con repo stanno da 10.200.101.0/24 in su; quelle senza restano non
+# fissate nella parte bassa del pool, cosi' non possono rubare uno slot.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.200.121.0/24
